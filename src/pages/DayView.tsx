@@ -1,0 +1,265 @@
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db, restartChallenge, setCheck } from '../db/db';
+import { useApp } from '../AppContext';
+import { Bar, Button, Card, Ring, cx } from '../components/ui';
+import { MealSheet, PhotoSheet, ReadingSheet, WaterSheet, WorkoutSheet } from '../components/LogSheets';
+import { BodyStatsSheet, JournalCard } from '../components/BodyJournal';
+import { addDaysStr, prettyDate } from '../lib/dates';
+import { dayNumber, evaluateDay, type TaskStatus } from '../lib/rules';
+import { CHALLENGE_DAYS } from '../lib/presets';
+import { formatWater, kgToWeightUnit, round1, waterQuickAdds, weightUnitLabel } from '../lib/units';
+import type { Challenge } from '../types';
+
+type SheetName = 'workout' | 'water' | 'meal' | 'reading' | 'photo' | 'body' | null;
+
+const ICONS: Record<string, string> = { workout: '🏋️', water: '💧', diet: '🥗', alcohol: '🚫', reading: '📖', photo: '📸' };
+
+function EndedCard({ challenge, today }: { challenge: Challenge; today: string }) {
+  const navigate = useNavigate();
+  if (challenge.status === 'completed') {
+    return (
+      <Card className="mb-4 border-emerald-700 bg-emerald-950/40 text-center">
+        <div className="text-5xl mb-2">🏆</div>
+        <h2 className="text-2xl font-bold text-white">75 days complete!</h2>
+        <p className="text-slate-300 mt-1 mb-4">You did it. Check your photos and progress to see how far you've come.</p>
+        <div className="flex gap-2 justify-center">
+          <Button variant="soft" onClick={() => navigate('/photos')}>Before / after</Button>
+          <Button onClick={() => navigate('/new')}>Start another</Button>
+        </div>
+      </Card>
+    );
+  }
+  const hard = challenge.config.missedDay.mode === 'restart';
+  return (
+    <Card className="mb-4 border-red-800 bg-red-950/40">
+      <h2 className="text-xl font-bold text-white">Attempt {challenge.attempt} ended on Day {challenge.failedOnDay}</h2>
+      <p className="text-slate-300 mt-1 mb-4">
+        {hard
+          ? 'The rules are the rules: a missed task means back to Day 1. Everything you logged is kept in your history.'
+          : 'You ran out of grace days. Everything you logged is kept in your history.'}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => restartChallenge(challenge, today)}>Restart at Day 1 today</Button>
+        <Button variant="soft" onClick={() => navigate('/new')}>Change rules</Button>
+      </div>
+    </Card>
+  );
+}
+
+export default function DayView() {
+  const params = useParams();
+  const { challenge, evaluation, getDay, today, settings } = useApp();
+  const date = params.date ?? today;
+  const [sheet, setSheet] = useState<SheetName>(null);
+  const close = () => setSheet(null);
+  const units = settings.units;
+
+  const workouts = useLiveQuery(() => db.workouts.where('date').equals(date).toArray(), [date]);
+  const meals = useLiveQuery(() => db.meals.where('date').equals(date).sortBy('time'), [date]);
+  const water = useLiveQuery(() => db.water.where('date').equals(date).toArray(), [date]);
+  const reading = useLiveQuery(() => db.reading.where('date').equals(date).toArray(), [date]);
+  const books = useLiveQuery(() => db.books.toArray(), []);
+  const body = useLiveQuery(() => db.bodyStats.get(date), [date]);
+
+  if (!challenge || !evaluation) return null;
+  const config = challenge.config;
+  const day = dayNumber(challenge.startDate, date);
+  const inWindow = day >= 1 && day <= CHALLENGE_DAYS;
+  const result = inWindow ? evaluation.days[day - 1] : undefined;
+  const ev = result ?? evaluateDay(config, Math.max(day, 1), getDay(date), 0, units);
+  const doneCount = ev.tasks.filter((t) => t.done).length;
+  const isToday = date === today;
+  const ended = challenge.status !== 'active';
+
+  const action = (t: TaskStatus) => {
+    if (t.key === 'diet' || t.key === 'alcohol' || t.key.startsWith('custom:'))
+      return () => setCheck(date, t.key, !t.done);
+    return () => setSheet(t.key as SheetName);
+  };
+
+  if (ended && isToday) return <EndedCard challenge={challenge} today={today} />;
+
+  return (
+    <div>
+
+      <div className="flex items-center justify-between mb-3">
+        <Link to={`/day/${addDaysStr(date, -1)}`} className="rounded-full p-2 text-slate-400 hover:bg-slate-800" aria-label="Previous day">◀</Link>
+        <div className="text-center">
+          <div className="text-sm text-slate-400">{isToday ? 'Today' : prettyDate(date, 'EEEE')}</div>
+          <div className="font-semibold text-white">{prettyDate(date, 'd MMMM yyyy')}</div>
+        </div>
+        {date < today ? (
+          <Link to={addDaysStr(date, 1) === today ? '/' : `/day/${addDaysStr(date, 1)}`} className="rounded-full p-2 text-slate-400 hover:bg-slate-800" aria-label="Next day">▶</Link>
+        ) : (
+          <span className="w-9" />
+        )}
+      </div>
+
+      <Card className="mb-4 flex items-center gap-5">
+        <Ring value={ev.tasks.length ? doneCount / ev.tasks.length : 0} size={112}>
+          {inWindow ? (
+            <>
+              <span className="text-xs text-slate-400">DAY</span>
+              <span className="text-3xl font-extrabold text-white leading-none">{day}</span>
+              <span className="text-xs text-slate-500">of {CHALLENGE_DAYS}</span>
+            </>
+          ) : (
+            <span className="text-sm text-slate-400 px-3 text-center">{day < 1 ? `Starts in ${1 - day}d` : 'Finished'}</span>
+          )}
+        </Ring>
+        <div className="flex-1">
+          <div className="text-sm text-slate-400">75 {challenge.type === 'hard' ? 'Hard' : 'Soft'} · attempt {challenge.attempt}</div>
+          <div className="text-xl font-bold text-white mt-0.5">
+            {ev.complete ? 'Day complete ✅' : `${doneCount} of ${ev.tasks.length} done`}
+          </div>
+          <div className="flex gap-4 mt-2 text-sm">
+            <span className="text-orange-300">🔥 {evaluation.streak} streak</span>
+            {config.missedDay.mode === 'grace' && (
+              <span className="text-slate-400">🛟 {config.missedDay.graceDays - evaluation.graceUsed} grace left</span>
+            )}
+          </div>
+          {result?.final && !ev.complete && <div className="text-xs text-red-400 mt-1">This day is closed.</div>}
+          {result?.state === 'open' && <div className="text-xs text-amber-400 mt-1">Finish by {settings.cutoffHour}:00 today.</div>}
+        </div>
+      </Card>
+
+      <div className="space-y-2 mb-4">
+        {ev.tasks.map((t) => (
+          <button key={t.key} onClick={action(t)}
+            className={cx('w-full text-left rounded-2xl border p-3 flex items-center gap-3 transition',
+              t.done ? 'border-emerald-800 bg-emerald-950/30' : 'border-slate-800 bg-slate-900 hover:border-slate-600')}>
+            <span className="text-2xl w-8 text-center">{ICONS[t.key] ?? '⭐'}</span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-white truncate">{t.label}</span>
+                <span className="text-xs text-slate-400 shrink-0">{t.detail.length < 28 ? t.detail : ''}</span>
+              </span>
+              {t.detail.length >= 28 && <span className="block text-xs text-slate-400 truncate">{t.detail}</span>}
+              {t.progress > 0 && t.progress < 1 && <Bar value={t.progress} className="mt-2" />}
+            </span>
+            <span className={cx('h-7 w-7 shrink-0 rounded-full border-2 flex items-center justify-center text-sm',
+              t.done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600')}>
+              {t.done ? '✓' : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <Card className="mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-white">💧 Quick water</h3>
+          <span className="text-sm text-slate-400">{formatWater(getDay(date).waterMl, units)}</span>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {waterQuickAdds(units).map((ml) => (
+            <button key={ml} onClick={() => db.water.add({ date, amountMl: Math.round(ml), createdAt: Date.now() })}
+              className="rounded-xl bg-sky-950 border border-sky-900 py-2 text-sm font-semibold text-sky-200 hover:bg-sky-900">
+              +{formatWater(ml, units).replace(' ', '')}
+            </button>
+          ))}
+          <button onClick={() => setSheet('water')} className="rounded-xl bg-slate-800 py-2 text-sm text-slate-300">Other</button>
+        </div>
+        {!!water?.length && (
+          <button className="text-xs text-slate-500 mt-2 underline" onClick={() => db.water.delete(water[water.length - 1].id!)}>
+            Undo last ({formatWater(water[water.length - 1].amountMl, units)})
+          </button>
+        )}
+      </Card>
+
+      <div className="grid grid-cols-4 gap-2 mb-4">
+        {([['workout', '🏋️', 'Workout'], ['meal', '🍽️', 'Meal'], ['reading', '📖', 'Reading'], ['photo', '📸', 'Photo']] as const).map(
+          ([k, icon, label]) => (
+            <button key={k} onClick={() => setSheet(k)} className="rounded-2xl bg-slate-900 border border-slate-800 py-3 hover:border-slate-600">
+              <div className="text-2xl">{icon}</div>
+              <div className="text-xs text-slate-300 mt-1">+ {label}</div>
+            </button>
+          ),
+        )}
+      </div>
+
+      {!!workouts?.length && (
+        <Card className="mb-4">
+          <h3 className="font-semibold text-white mb-2">Workouts</h3>
+          {workouts.map((w) => (
+            <div key={w.id} className="flex items-center justify-between py-2 border-t border-slate-800 first:border-0">
+              <div>
+                <div className="text-slate-100">{w.kind} · {w.durationMin} min</div>
+                <div className="text-xs text-slate-500">
+                  {[w.outdoor && '🌳 outdoor', w.recovery && '🧘 recovery', w.distanceKm && `${round1(w.distanceKm)} km`, w.notes].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              <button className="text-slate-500 hover:text-red-400 px-2" aria-label="Delete workout" onClick={() => db.workouts.delete(w.id!)}>✕</button>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {!!meals?.length && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-white">Meals</h3>
+            <span className="text-xs text-slate-400">
+              {meals.reduce((s, m) => s + (m.calories ?? 0), 0) || '–'} kcal · {meals.reduce((s, m) => s + (m.proteinG ?? 0), 0) || '–'} g protein
+            </span>
+          </div>
+          {meals.map((m) => (
+            <div key={m.id} className="flex items-center justify-between py-2 border-t border-slate-800 first:border-0">
+              <div>
+                <div className="text-slate-100">{m.onPlan ? '' : '⚠️ '}{m.name}</div>
+                <div className="text-xs text-slate-500">
+                  {m.mealType} · {m.time}{m.calories ? ` · ${m.calories} kcal` : ''}{m.proteinG ? ` · ${m.proteinG} g protein` : ''}
+                </div>
+              </div>
+              <button className="text-slate-500 hover:text-red-400 px-2" aria-label="Delete meal" onClick={() => db.meals.delete(m.id!)}>✕</button>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {!!reading?.length && (
+        <Card className="mb-4">
+          <h3 className="font-semibold text-white mb-2">Reading</h3>
+          {reading.map((r) => (
+            <div key={r.id} className="flex items-center justify-between py-2 border-t border-slate-800 first:border-0">
+              <div className="text-slate-100">
+                {books?.find((b) => b.id === r.bookId)?.title ?? 'Reading'}
+                <span className="text-xs text-slate-500"> · {r.pages ? `${r.pages} pages` : ''}{r.pages && r.minutes ? ', ' : ''}{r.minutes ? `${r.minutes} min` : ''}{r.audiobook ? ' 🎧' : ''}</span>
+              </div>
+              <button className="text-slate-500 hover:text-red-400 px-2" aria-label="Delete reading" onClick={() => db.reading.delete(r.id!)}>✕</button>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <button onClick={() => setSheet('body')} className="w-full mb-4 text-left">
+        <Card className="hover:border-slate-600">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-white">⚖️ Body & wellbeing</h3>
+            <span className="text-sm text-accent">{body ? 'Edit' : 'Add'}</span>
+          </div>
+          {body && (
+            <div className="text-sm text-slate-400 mt-1">
+              {[
+                body.weightKg && `${round1(kgToWeightUnit(body.weightKg, units))} ${weightUnitLabel(units)}`,
+                body.sleepHrs && `${body.sleepHrs} h sleep`,
+                body.mood && `mood ${body.mood}/5`,
+                body.energy && `energy ${body.energy}/5`,
+              ].filter(Boolean).join(' · ')}
+            </div>
+          )}
+        </Card>
+      </button>
+
+      <JournalCard date={date} />
+
+      <WorkoutSheet date={date} units={units} open={sheet === 'workout'} onClose={close} minMinutes={config.workoutMinutes} />
+      <WaterSheet date={date} units={units} open={sheet === 'water'} onClose={close} />
+      <MealSheet date={date} units={units} open={sheet === 'meal'} onClose={close} />
+      <ReadingSheet date={date} units={units} open={sheet === 'reading'} onClose={close} unit={config.reading.unit} />
+      <PhotoSheet date={date} open={sheet === 'photo'} onClose={close} />
+      <BodyStatsSheet date={date} units={units} open={sheet === 'body'} onClose={close} />
+    </div>
+  );
+}

@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-accent: #f97316;
+  --color-accent-strong: #ea580c;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  background: #020617;
+  color: #e2e8f0;
+  -webkit-tap-highlight-color: transparent;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+input, select, textarea { color-scheme: dark; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: max(1.5rem, env(safe-area-inset-top)); }
