@@ -24,13 +24,22 @@ async function notify(title: string, body: string) {
 }
 
 /** Picks the reminder due at this minute, skipping ones whose task is already done. */
-export function dueReminder(r: ReminderSettings, now: Date, tasks: TaskStatus[]): { title: string; body: string } | null {
+export function dueReminder(
+  r: ReminderSettings,
+  now: Date,
+  tasks: TaskStatus[],
+  /** Today is a photo day and no photo has been added yet. */
+  photoDue = false,
+): { title: string; body: string } | null {
   if (!r.enabled) return null;
   const hhmm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const task = (k: string) => tasks.find((t) => t.key === k);
-  for (const item of reminderList(r)) {
+  const photoNote = photoDue ? ' Plus your progress photo 📸' : '';
+  for (const item of reminderList(r, photoDue ? { everyDays: 1, start: '' } : undefined)) {
     if (item.time !== hhmm) continue;
-    if (item.title.includes('water')) {
+    if (item.title.includes('photo')) {
+      return { title: '📸 Progress photo day', body: 'Snap your progress photo – future you will love the comparison.' };
+    } else if (item.title.includes('water')) {
       const w = task('water');
       if (w && !w.done) return { title: '💧 Drink water', body: `You're at ${w.detail}.` };
     } else if (item.title.includes('workout')) {
@@ -41,19 +50,21 @@ export function dueReminder(r: ReminderSettings, now: Date, tasks: TaskStatus[])
       if (w && !w.done) return { title: '📖 Reading', body: w.detail };
     } else {
       const left = tasks.filter((t) => !t.done);
-      if (left.length) return { title: `⏰ ${left.length} task${left.length > 1 ? 's' : ''} left today`, body: left.map((t) => t.label).join(', ') };
+      if (left.length)
+        return { title: `⏰ ${left.length} task${left.length > 1 ? 's' : ''} left today`, body: left.map((t) => t.label).join(', ') + photoNote };
+      if (photoDue) return { title: '📸 Progress photo', body: "All tasks done – don't forget today's photo." };
     }
   }
   return null;
 }
 
 /** In-app reminder loop: fires system notifications when allowed, otherwise an in-app toast. */
-export function useReminders(r: ReminderSettings, now: Date, tasks: TaskStatus[] | undefined) {
+export function useReminders(r: ReminderSettings, now: Date, tasks: TaskStatus[] | undefined, photoDue = false) {
   const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
   const minuteKey = `${now.toDateString()} ${now.getHours()}:${now.getMinutes()}`;
   useEffect(() => {
     if (!tasks) return;
-    const due = dueReminder(r, now, tasks);
+    const due = dueReminder(r, now, tasks, photoDue);
     if (!due) return;
     const key = `reminder:${minuteKey}`;
     try {

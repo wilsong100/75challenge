@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDay, evaluateChallenge, evaluateDay, isFinal, type DayData } from './rules';
+import { DAY_CONFIRMED, DAY_MISSED, emptyDay, evaluateChallenge, evaluateDay, isFinal, isPhotoDay, type DayData } from './rules';
 import { HARD_CONFIG, SOFT_DEFAULTS } from './presets';
 import { addDaysStr } from './dates';
 import type { ChallengeConfig, Workout } from '../types';
@@ -21,47 +21,54 @@ function perfect(config: ChallengeConfig): DayData {
 
 describe('evaluateDay – 75 Hard', () => {
   it('passes a perfect day', () => {
-    expect(evaluateDay(HARD_CONFIG, 1, perfect(HARD_CONFIG), 0).complete).toBe(true);
+    expect(evaluateDay(HARD_CONFIG, perfect(HARD_CONFIG), 0).complete).toBe(true);
   });
 
   it('requires one of the two workouts to be outdoors', () => {
     const d = { ...perfect(HARD_CONFIG), workouts: [w(45), w(45)] };
-    const ev = evaluateDay(HARD_CONFIG, 1, d, 0);
+    const ev = evaluateDay(HARD_CONFIG, d, 0);
     expect(ev.tasks.find((t) => t.key === 'workout')!.done).toBe(false);
     expect(ev.complete).toBe(false);
   });
 
   it('does not count short workouts', () => {
     const d = { ...perfect(HARD_CONFIG), workouts: [w(45, true), w(30)] };
-    expect(evaluateDay(HARD_CONFIG, 1, d, 0).complete).toBe(false);
+    expect(evaluateDay(HARD_CONFIG, d, 0).complete).toBe(false);
   });
 
-  it('requires water, reading, photo, diet and no alcohol', () => {
-    for (const patch of [{ waterMl: 3000 }, { readingPages: 9 }, { hasPhoto: false }, { checks: { diet: true } }]) {
-      expect(evaluateDay(HARD_CONFIG, 1, { ...perfect(HARD_CONFIG), ...patch }, 0).complete).toBe(false);
+  it('requires water, reading, diet and no alcohol', () => {
+    for (const patch of [{ waterMl: 3000 }, { readingPages: 9 }, { checks: { diet: true } }]) {
+      expect(evaluateDay(HARD_CONFIG, { ...perfect(HARD_CONFIG), ...patch }, 0).complete).toBe(false);
     }
   });
 
   it('never allows recovery days', () => {
     const d = { ...perfect(HARD_CONFIG), workouts: [w(20, true, true)] };
-    expect(evaluateDay(HARD_CONFIG, 1, d, 0).complete).toBe(false);
+    expect(evaluateDay(HARD_CONFIG, d, 0).complete).toBe(false);
   });
 });
 
 describe('evaluateDay – 75 Soft', () => {
-  it('only needs a weekly photo on days 1, 8, 15…', () => {
-    const d = { ...perfect(SOFT_DEFAULTS), hasPhoto: false };
-    expect(evaluateDay(SOFT_DEFAULTS, 1, d, 0).complete).toBe(false);
-    expect(evaluateDay(SOFT_DEFAULTS, 2, d, 0).complete).toBe(true);
-    expect(evaluateDay(SOFT_DEFAULTS, 8, d, 0).complete).toBe(false);
+  it('treats the progress photo as a reminder, never a task', () => {
+    for (const config of [HARD_CONFIG, SOFT_DEFAULTS]) {
+      const ev = evaluateDay(config, { ...perfect(config), hasPhoto: false }, 0);
+      expect(ev.complete).toBe(true);
+      expect(ev.tasks.map((t) => t.key)).not.toContain('photo');
+    }
+  });
+
+  it('marks weekly photo days on days 1, 8, 15…', () => {
+    expect([1, 2, 7, 8, 15].map((d) => isPhotoDay(SOFT_DEFAULTS, d))).toEqual([true, false, false, true, true]);
+    expect(isPhotoDay(HARD_CONFIG, 2)).toBe(true);
+    expect(isPhotoDay({ ...SOFT_DEFAULTS, photo: 'off' }, 1)).toBe(false);
   });
 
   it('accepts an active-recovery session while recovery days remain', () => {
     const d = { ...perfect(SOFT_DEFAULTS), workouts: [w(20, false, true)] };
-    const ev = evaluateDay(SOFT_DEFAULTS, 3, d, 0);
+    const ev = evaluateDay(SOFT_DEFAULTS, d, 0);
     expect(ev.complete).toBe(true);
     expect(ev.usedRecovery).toBe(true);
-    expect(evaluateDay(SOFT_DEFAULTS, 4, d, 1).complete).toBe(false);
+    expect(evaluateDay(SOFT_DEFAULTS, d, 1).complete).toBe(false);
   });
 
   it('skips diet/alcohol tasks when there is no rule and supports minutes reading', () => {
@@ -73,7 +80,7 @@ describe('evaluateDay – 75 Soft', () => {
       customTasks: ['Meditate'],
     };
     const d = { ...perfect(config), checks: { 'custom:Meditate': true } };
-    const ev = evaluateDay(config, 2, d, 0);
+    const ev = evaluateDay(config, d, 0);
     expect(ev.tasks.map((t) => t.key)).toEqual(['workout', 'water', 'reading', 'custom:Meditate']);
     expect(ev.complete).toBe(true);
   });
@@ -92,9 +99,12 @@ describe('isFinal', () => {
 describe('evaluateChallenge', () => {
   const start = '2026-09-01';
   const now = new Date(2026, 8, 11, 12, 0); // day 11, noon
-  const days = (config: ChallengeConfig, missed: number[]) => (date: string) => {
-    const day = Math.round((new Date(date).getTime() - new Date(start).getTime()) / 864e5) + 1;
-    return missed.includes(day) || date > '2026-09-10' ? emptyDay() : perfect(config);
+  const dayOf = (date: string) => Math.round((new Date(date).getTime() - new Date(start).getTime()) / 864e5) + 1;
+  /** `missed` days were confirmed as missed by the user; `unlogged` days were simply left empty. */
+  const days = (config: ChallengeConfig, missed: number[], unlogged: number[] = []) => (date: string): DayData => {
+    const day = dayOf(date);
+    if (missed.includes(day)) return { ...emptyDay(), checks: { [DAY_MISSED]: true } };
+    return unlogged.includes(day) || date > '2026-09-10' ? emptyDay() : perfect(config);
   };
 
   it('fails 75 Hard on the first missed day', () => {
@@ -120,6 +130,31 @@ describe('evaluateChallenge', () => {
     expect(ev.failedOnDay).toBeUndefined();
     expect(ev.completedDays).toBe(7);
     expect(ev.currentDay).toBe(11);
+  });
+
+  it('asks about unlogged days instead of failing them', () => {
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [], [4, 5]), now);
+    expect(ev.failedOnDay).toBeUndefined();
+    expect(ev.needsReview.map((d) => d.day)).toEqual([4, 5]);
+    expect(ev.days[3].state).toBe('review');
+    expect(ev.completed).toBe(false);
+  });
+
+  it('counts a day confirmed as done even when nothing was logged', () => {
+    const getDay = (date: string) =>
+      dayOf(date) === 4 ? { ...emptyDay(), checks: { [DAY_CONFIRMED]: true } } : days(HARD_CONFIG, [])(date);
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, getDay, now);
+    expect(ev.days[3]).toMatchObject({ state: 'complete', confirmed: true });
+    expect(ev.days[3].tasks.every((t) => t.done)).toBe(true);
+    expect(ev.needsReview).toHaveLength(0);
+    expect(ev.streak).toBe(10);
+  });
+
+  it('keeps yesterday open (no prompt) until the cut-off', () => {
+    const morning = new Date(2026, 8, 11, 8, 0);
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [], [10]), morning);
+    expect(ev.days[9].state).toBe('open');
+    expect(ev.needsReview).toHaveLength(0);
   });
 
   it('completes after 75 perfect days', () => {

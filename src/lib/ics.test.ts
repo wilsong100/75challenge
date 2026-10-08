@@ -11,4 +11,11 @@ describe('ics', () => {
     expect(ics).toContain('RRULE:FREQ=DAILY;COUNT=75');
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(list.length);
   });
+
+  it('adds a weekly photo reminder starting on the next photo day', () => {
+    const list = reminderList(DEFAULT_SETTINGS.reminders, { everyDays: 7, start: '2026-10-05' });
+    const ics = buildIcs(list, '2026-10-01', 75, new Date(Date.UTC(2026, 8, 29)));
+    expect(ics).toContain('DTSTART:20261005T073000');
+    expect(ics).toContain('RRULE:FREQ=DAILY;INTERVAL=7;COUNT=11');
+  });
 });
