@@ -22,7 +22,7 @@ export const emptyDay = (): DayData => ({
   checks: {},
 });
 
-export type TaskKey = 'workout' | 'water' | 'diet' | 'alcohol' | 'reading' | 'photo' | `custom:${string}`;
+export type TaskKey = 'workout' | 'water' | 'diet' | 'alcohol' | 'reading' | `custom:${string}`;
 
 export interface TaskStatus {
   key: TaskKey;
@@ -49,7 +49,8 @@ export const dayNumber = (startDate: string, date: string) => diffDays(date, sta
 export const dateForDay = (startDate: string, day: number) => addDaysStr(startDate, day - 1);
 export const weekIndex = (day: number) => Math.floor((day - 1) / 7);
 
-export const photoRequired = (config: ChallengeConfig, day: number) =>
+/** Progress photos are a reminder, not a task: they never stop a day from being complete. */
+export const isPhotoDay = (config: ChallengeConfig, day: number) =>
   config.photo === 'daily' || (config.photo === 'weekly' && (day - 1) % 7 === 0);
 
 export const dietLabel = (config: ChallengeConfig) =>
@@ -64,7 +65,6 @@ export const alcoholLabel = (config: ChallengeConfig) =>
 
 export function evaluateDay(
   config: ChallengeConfig,
-  day: number,
   data: DayData,
   recoveryUsedThisWeek: number,
   units: Units = 'metric',
@@ -122,17 +122,6 @@ export function evaluateDay(
     done: read >= config.reading.amount,
     progress: Math.min(read / config.reading.amount, 1),
   });
-
-  // Photo
-  if (photoRequired(config, day)) {
-    tasks.push({
-      key: 'photo',
-      label: 'Progress photo',
-      detail: config.photo === 'weekly' ? 'Weekly photo day' : 'Daily photo',
-      done: data.hasPhoto,
-      progress: data.hasPhoto ? 1 : 0,
-    });
-  }
 
   for (const name of config.customTasks) {
     const key = `custom:${name}` as const;
@@ -208,7 +197,7 @@ export function evaluateChallenge(
     const date = dateForDay(startDate, day);
     const wk = weekIndex(day);
     const used = recoveryPerWeek[wk] ?? 0;
-    const ev = evaluateDay(config, day, getDay(date), used, units);
+    const ev = evaluateDay(config, getDay(date), used, units);
     if (ev.usedRecovery) recoveryPerWeek[wk] = used + 1;
     const final = isFinal(date, now, cutoffHour);
     let state: DayState;

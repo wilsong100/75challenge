@@ -38,7 +38,7 @@ export const HARD_RULES = [
   'No alcohol',
   'Drink 3.8 L (1 gallon) of water',
   'Read 10 pages of a non-fiction book (no audiobooks)',
-  'Take a progress photo every day',
+  'Progress photo every day (a reminder – it never fails a day)',
   'Miss anything and you restart at Day 1',
 ];
 
@@ -69,7 +69,7 @@ export function describeConfig(c: ChallengeConfig): string[] {
   lines.push(
     `Read ${r.amount} ${r.unit}${r.nonFictionOnly ? ' of non-fiction' : ''}${r.audiobooksAllowed ? ' (audiobooks OK)' : ''}`,
   );
-  if (c.photo !== 'off') lines.push(`Progress photo ${c.photo === 'daily' ? 'every day' : 'once a week'}`);
+  if (c.photo !== 'off') lines.push(`Progress photo reminder ${c.photo === 'daily' ? 'every day' : 'once a week'} (optional)`);
   c.customTasks.forEach((t) => lines.push(t));
   lines.push(
     c.missedDay.mode === 'restart'

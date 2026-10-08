@@ -187,7 +187,8 @@ export default function Onboarding({
           </Card>
 
           <Card className="mb-4">
-            <h3 className="font-semibold text-white mb-3">📸 Progress photo</h3>
+            <h3 className="font-semibold text-white mb-1">📸 Progress photo reminder</h3>
+            <p className="text-sm text-slate-400 mb-3">Just a nudge – a missing photo never counts against a day.</p>
             <Segmented value={config.photo} onChange={(v) => set({ photo: v })}
               options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'off', label: 'Off' }]} />
           </Card>

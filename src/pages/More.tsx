@@ -6,7 +6,7 @@ import { useApp } from '../AppContext';
 import { Button, Card, Field, PageHeader, Segmented, Toggle, cx, inputCls } from '../components/ui';
 import { bestStreak, computeBadges } from '../lib/badges';
 import { describeConfig } from '../lib/presets';
-import { prettyDate } from '../lib/dates';
+import { addDaysStr, diffDays, prettyDate } from '../lib/dates';
 import { buildIcs, reminderList } from '../lib/ics';
 import { download } from '../lib/image';
 import { exportBackup, importBackup } from '../lib/backup';
@@ -145,7 +145,7 @@ function SettingsPanel() {
   const [msg, setMsg] = useState('');
   const r = settings.reminders;
   const setR = (patch: Partial<ReminderSettings>) => saveSettings({ reminders: { ...r, ...patch } });
-  const time = (k: 'workout' | 'reading' | 'endOfDay' | 'waterFrom' | 'waterTo', label: string) => (
+  const time = (k: 'workout' | 'reading' | 'photo' | 'endOfDay' | 'waterFrom' | 'waterTo', label: string) => (
     <Field label={label}>
       <input type="time" className={inputCls} value={r[k]} onChange={(e) => setR({ [k]: e.target.value })} />
     </Field>
@@ -182,6 +182,7 @@ function SettingsPanel() {
           {time('workout', 'Workout')}
           {time('reading', 'Reading')}
           {time('endOfDay', 'End-of-day check')}
+          {challenge?.config.photo !== 'off' && time('photo', `Photo (${challenge?.config.photo === 'weekly' ? 'weekly' : 'daily'})`)}
           <Field label="Water every">
             <select className={inputCls} value={r.waterEveryHours} onChange={(e) => setR({ waterEveryHours: +e.target.value })}>
               {[0, 1, 2, 3].map((h) => <option key={h} value={h}>{h === 0 ? 'Off' : `${h} hour${h > 1 ? 's' : ''}`}</option>)}
@@ -191,7 +192,17 @@ function SettingsPanel() {
           {time('waterTo', 'Water until')}
         </div>
         <Button variant="soft" className="w-full"
-          onClick={() => download('75-day-reminders.ics', buildIcs(reminderList(r), challenge && challenge.startDate > today ? challenge.startDate : today), 'text/calendar')}>
+          onClick={() => {
+            const start = challenge && challenge.startDate > today ? challenge.startDate : today;
+            let photo: { everyDays: number; start: string } | undefined;
+            if (challenge && challenge.config.photo !== 'off') {
+              // Weekly photo days fall on Day 1, 8, 15… of the challenge.
+              const everyDays = challenge.config.photo === 'weekly' ? 7 : 1;
+              const offset = diffDays(start, challenge.startDate) % everyDays;
+              photo = { everyDays, start: addDaysStr(start, (everyDays - offset) % everyDays) };
+            }
+            download('75-day-reminders.ics', buildIcs(reminderList(r, photo), start), 'text/calendar');
+          }}>
           📅 Add reminders to my calendar (.ics)
         </Button>
       </Card>

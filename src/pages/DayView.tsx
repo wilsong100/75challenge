@@ -8,7 +8,7 @@ import { MealSheet, PhotoSheet, ReadingSheet, WaterSheet, WorkoutSheet } from '.
 import { BodyStatsSheet, JournalCard } from '../components/BodyJournal';
 import { addDaysStr, prettyDate } from '../lib/dates';
 import {
-  DAY_CONFIRMED, DAY_MISSED, dayNumber, evaluateDay, type ChallengeEvaluation, type DayResult, type TaskStatus,
+  DAY_CONFIRMED, DAY_MISSED, dayNumber, evaluateDay, isPhotoDay, type ChallengeEvaluation, type DayResult, type TaskStatus,
 } from '../lib/rules';
 import { CHALLENGE_DAYS } from '../lib/presets';
 import { formatWater, kgToWeightUnit, round1, waterQuickAdds, weightUnitLabel } from '../lib/units';
@@ -163,7 +163,7 @@ export default function DayView() {
   const day = dayNumber(challenge.startDate, date);
   const inWindow = day >= 1 && day <= CHALLENGE_DAYS;
   const result = inWindow ? evaluation.days[day - 1] : undefined;
-  const ev = result ?? evaluateDay(config, Math.max(day, 1), getDay(date), 0, units);
+  const ev = result ?? evaluateDay(config, getDay(date), 0, units);
   const doneCount = ev.tasks.filter((t) => t.done).length;
   const isToday = date === today;
   const ended = challenge.status !== 'active';
@@ -219,6 +219,21 @@ export default function DayView() {
           {result?.state === 'review' && <div className="text-xs text-amber-400 mt-1">Not fully logged yet</div>}
         </div>
       </Card>
+
+      {isToday && inWindow && !ended && isPhotoDay(config, day) && !getDay(date).hasPhoto && (
+        <button onClick={() => setSheet('photo')} className="w-full text-left mb-4">
+          <Card className="flex items-center gap-3 border-sky-800 bg-sky-950/30 hover:border-sky-600">
+            <span className="text-2xl">📸</span>
+            <span className="flex-1">
+              <span className="block font-semibold text-white">
+                {config.photo === 'weekly' ? `Week ${Math.floor((day - 1) / 7) + 1} photo day` : 'Progress photo'}
+              </span>
+              <span className="block text-xs text-slate-400">Optional – it won't affect your day, but you'll love the before/after.</span>
+            </span>
+            <span className="text-sm font-semibold text-sky-300">Add</span>
+          </Card>
+        </button>
+      )}
 
       {result && date < today && <PastDayActions result={result} challenge={challenge} evaluation={evaluation} />}
 

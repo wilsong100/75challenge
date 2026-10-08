@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, DEFAULT_SETTINGS } from './db';
+import { db, withDefaults } from './db';
 import { emptyDay, evaluateChallenge, type ChallengeEvaluation, type DayData } from '../lib/rules';
 import { todayStr } from '../lib/dates';
 import type { Challenge, Settings } from '../types';
@@ -16,7 +16,7 @@ export function useNow(intervalMs = 30_000) {
 }
 
 export function useSettings(): Settings {
-  return useLiveQuery(() => db.settings.get('app'), []) ?? DEFAULT_SETTINGS;
+  return withDefaults(useLiveQuery(() => db.settings.get('app'), []));
 }
 
 export interface AppData {

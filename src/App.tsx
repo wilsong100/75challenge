@@ -4,7 +4,7 @@ import { useAppData } from './db/hooks';
 import { AppContext, useApp } from './AppContext';
 import { cx } from './components/ui';
 import { useReminders } from './lib/reminders';
-import { dayNumber } from './lib/rules';
+import { dayNumber, isPhotoDay } from './lib/rules';
 import Onboarding from './pages/Onboarding';
 import DayView from './pages/DayView';
 import Calendar from './pages/Calendar';
@@ -41,7 +41,8 @@ export default function App() {
   const { challenge, evaluation, today } = app;
   const day = challenge ? dayNumber(challenge.startDate, today) : 0;
   const todayTasks = evaluation && day >= 1 && day <= 75 && challenge?.status === 'active' ? evaluation.days[day - 1].tasks : undefined;
-  const { toast, dismiss } = useReminders(app.settings.reminders, app.now, todayTasks);
+  const photoDue = !!todayTasks && isPhotoDay(challenge!.config, day) && !app.getDay(today).hasPhoto;
+  const { toast, dismiss } = useReminders(app.settings.reminders, app.now, todayTasks, photoDue);
 
   if (app.loading) return <div className="min-h-screen" />;
   if (!challenge) return <Onboarding settings={app.settings} />;

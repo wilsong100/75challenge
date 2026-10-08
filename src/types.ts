@@ -147,6 +147,7 @@ export interface ReminderSettings {
   waterTo: string;
   workout: string;
   reading: string;
+  photo: string;
   endOfDay: string;
 }
 

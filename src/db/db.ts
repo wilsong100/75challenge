@@ -52,12 +52,17 @@ export const DEFAULT_SETTINGS: Settings = {
     waterTo: '20:00',
     workout: '07:00',
     reading: '21:00',
+    photo: '07:30',
     endOfDay: '20:30',
   },
 };
 
+/** Fill in settings added after the user first saved theirs. */
+export const withDefaults = (s?: Settings): Settings =>
+  s ? { ...DEFAULT_SETTINGS, ...s, reminders: { ...DEFAULT_SETTINGS.reminders, ...s.reminders } } : DEFAULT_SETTINGS;
+
 export async function getSettings(): Promise<Settings> {
-  return (await db.settings.get('app')) ?? DEFAULT_SETTINGS;
+  return withDefaults(await db.settings.get('app'));
 }
 
 export async function saveSettings(patch: Partial<Settings>) {
