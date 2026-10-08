@@ -162,7 +162,7 @@ function SettingsPanel() {
           <Segmented value={settings.units} onChange={(units) => saveSettings({ units })}
             options={[{ value: 'metric', label: 'Metric (L, kg, cm)' }, { value: 'imperial', label: 'Imperial (oz, lb, in)' }]} />
         </Field>
-        <Field label="Finish a day by" hint="How long into the next morning you can still complete yesterday.">
+        <Field label="Ask about unlogged days from" hint="Until this time the next morning, yesterday stays open with no prompt. After that, unlogged days show up in 'Catch up' on Today. A day only counts as missed when you say so.">
           <Segmented value={settings.cutoffHour} onChange={(cutoffHour) => saveSettings({ cutoffHour })}
             options={[0, 6, 10, 12].map((h) => ({ value: h, label: h === 0 ? 'Midnight' : `${h}:00` }))} />
         </Field>

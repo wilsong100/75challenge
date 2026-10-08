@@ -37,7 +37,13 @@ export interface DayEvaluation {
   tasks: TaskStatus[];
   complete: boolean;
   usedRecovery: boolean;
+  /** You confirmed you did everything without logging each task. */
+  confirmed: boolean;
 }
+
+/** Check keys for a whole day: "I did everything" and "yes, I really missed it". */
+export const DAY_CONFIRMED = 'day:confirmed';
+export const DAY_MISSED = 'day:missed';
 
 export const dayNumber = (startDate: string, date: string) => diffDays(date, startDate) + 1;
 export const dateForDay = (startDate: string, day: number) => addDaysStr(startDate, day - 1);
@@ -134,16 +140,29 @@ export function evaluateDay(
     tasks.push({ key, label: name, detail: 'Custom task', done, progress: done ? 1 : 0 });
   }
 
-  return { tasks, complete: tasks.every((t) => t.done), usedRecovery };
+  // Forgot to log but did the work: count every task as done.
+  if (data.checks[DAY_CONFIRMED]) {
+    for (const t of tasks) {
+      t.done = true;
+      t.progress = 1;
+    }
+    return { tasks, complete: true, usedRecovery, confirmed: true };
+  }
+
+  return { tasks, complete: tasks.every((t) => t.done), usedRecovery, confirmed: false };
 }
 
-export type DayState = 'complete' | 'partial' | 'missed' | 'grace' | 'today' | 'future' | 'open';
+/**
+ * - open: a past day you can still finish without being asked (before the next morning's cut-off)
+ * - review: a past day that isn't fully logged – the app asks whether you missed it or forgot to log it
+ */
+export type DayState = 'complete' | 'partial' | 'missed' | 'grace' | 'today' | 'future' | 'open' | 'review';
 
 export interface DayResult extends DayEvaluation {
   day: number;
   date: string;
   state: DayState;
-  /** Past its cut-off – can no longer be completed. */
+  /** Past the next morning's cut-off. */
   final: boolean;
 }
 
@@ -156,6 +175,8 @@ export interface ChallengeEvaluation {
   completedDays: number;
   graceUsed: number;
   streak: number;
+  /** Past days that aren't fully logged and still need an answer: forgot to log, or missed? */
+  needsReview: DayResult[];
 }
 
 /** A date is final once the next morning's cut-off hour has passed. */
@@ -195,6 +216,8 @@ export function evaluateChallenge(
     else if (date > today) state = 'future';
     else if (date === today) state = 'today';
     else if (!final) state = 'open';
+    // Never fail someone just for forgetting to log – ask first.
+    else if (!getDay(date).checks[DAY_MISSED]) state = 'review';
     else {
       failed++;
       if (config.missedDay.mode === 'grace' && failed <= graceAllowed) {
@@ -211,7 +234,8 @@ export function evaluateChallenge(
 
   const currentDay = Math.max(1, Math.min(dayNumber(startDate, today), CHALLENGE_DAYS));
   const last = days[CHALLENGE_DAYS - 1];
-  const completed = failedOnDay === undefined && (last.complete || last.final);
+  const needsReview = days.filter((d) => d.state === 'review');
+  const completed = failedOnDay === undefined && !needsReview.length && (last.complete || last.final);
 
   // Streak: consecutive complete days ending today (or yesterday if today isn't done yet).
   let streak = 0;
@@ -227,5 +251,6 @@ export function evaluateChallenge(
     completedDays: days.filter((d) => d.complete).length,
     graceUsed,
     streak,
+    needsReview,
   };
 }

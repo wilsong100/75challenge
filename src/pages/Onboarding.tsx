@@ -272,7 +272,7 @@ export default function Onboarding({
             </ul>
           </Card>
           <p className="text-sm text-slate-500 mt-4">
-            You can finish a day until {settings.cutoffHour}:00 the next morning (change this in Settings).
+            Forgot to log a day? No problem – the app asks you to catch up and never marks a day as missed unless you say so.
           </p>
         </>
       )}

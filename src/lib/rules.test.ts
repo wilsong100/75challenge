@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDay, evaluateChallenge, evaluateDay, isFinal, type DayData } from './rules';
+import { DAY_CONFIRMED, DAY_MISSED, emptyDay, evaluateChallenge, evaluateDay, isFinal, type DayData } from './rules';
 import { HARD_CONFIG, SOFT_DEFAULTS } from './presets';
 import { addDaysStr } from './dates';
 import type { ChallengeConfig, Workout } from '../types';
@@ -92,9 +92,12 @@ describe('isFinal', () => {
 describe('evaluateChallenge', () => {
   const start = '2026-09-01';
   const now = new Date(2026, 8, 11, 12, 0); // day 11, noon
-  const days = (config: ChallengeConfig, missed: number[]) => (date: string) => {
-    const day = Math.round((new Date(date).getTime() - new Date(start).getTime()) / 864e5) + 1;
-    return missed.includes(day) || date > '2026-09-10' ? emptyDay() : perfect(config);
+  const dayOf = (date: string) => Math.round((new Date(date).getTime() - new Date(start).getTime()) / 864e5) + 1;
+  /** `missed` days were confirmed as missed by the user; `unlogged` days were simply left empty. */
+  const days = (config: ChallengeConfig, missed: number[], unlogged: number[] = []) => (date: string): DayData => {
+    const day = dayOf(date);
+    if (missed.includes(day)) return { ...emptyDay(), checks: { [DAY_MISSED]: true } };
+    return unlogged.includes(day) || date > '2026-09-10' ? emptyDay() : perfect(config);
   };
 
   it('fails 75 Hard on the first missed day', () => {
@@ -120,6 +123,31 @@ describe('evaluateChallenge', () => {
     expect(ev.failedOnDay).toBeUndefined();
     expect(ev.completedDays).toBe(7);
     expect(ev.currentDay).toBe(11);
+  });
+
+  it('asks about unlogged days instead of failing them', () => {
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [], [4, 5]), now);
+    expect(ev.failedOnDay).toBeUndefined();
+    expect(ev.needsReview.map((d) => d.day)).toEqual([4, 5]);
+    expect(ev.days[3].state).toBe('review');
+    expect(ev.completed).toBe(false);
+  });
+
+  it('counts a day confirmed as done even when nothing was logged', () => {
+    const getDay = (date: string) =>
+      dayOf(date) === 4 ? { ...emptyDay(), checks: { [DAY_CONFIRMED]: true } } : days(HARD_CONFIG, [])(date);
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, getDay, now);
+    expect(ev.days[3]).toMatchObject({ state: 'complete', confirmed: true });
+    expect(ev.days[3].tasks.every((t) => t.done)).toBe(true);
+    expect(ev.needsReview).toHaveLength(0);
+    expect(ev.streak).toBe(10);
+  });
+
+  it('keeps yesterday open (no prompt) until the cut-off', () => {
+    const morning = new Date(2026, 8, 11, 8, 0);
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [], [10]), morning);
+    expect(ev.days[9].state).toBe('open');
+    expect(ev.needsReview).toHaveLength(0);
   });
 
   it('completes after 75 perfect days', () => {

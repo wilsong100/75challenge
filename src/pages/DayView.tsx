@@ -7,7 +7,9 @@ import { Bar, Button, Card, Ring, cx } from '../components/ui';
 import { MealSheet, PhotoSheet, ReadingSheet, WaterSheet, WorkoutSheet } from '../components/LogSheets';
 import { BodyStatsSheet, JournalCard } from '../components/BodyJournal';
 import { addDaysStr, prettyDate } from '../lib/dates';
-import { dayNumber, evaluateDay, type TaskStatus } from '../lib/rules';
+import {
+  DAY_CONFIRMED, DAY_MISSED, dayNumber, evaluateDay, type ChallengeEvaluation, type DayResult, type TaskStatus,
+} from '../lib/rules';
 import { CHALLENGE_DAYS } from '../lib/presets';
 import { formatWater, kgToWeightUnit, round1, waterQuickAdds, weightUnitLabel } from '../lib/units';
 import type { Challenge } from '../types';
@@ -15,6 +17,99 @@ import type { Challenge } from '../types';
 type SheetName = 'workout' | 'water' | 'meal' | 'reading' | 'photo' | 'body' | null;
 
 const ICONS: Record<string, string> = { workout: '🏋️', water: '💧', diet: '🥗', alcohol: '🚫', reading: '📖', photo: '📸' };
+
+/** What answering "I missed it" will do under this challenge's rules. */
+function missedConsequence(challenge: Challenge, evaluation: ChallengeEvaluation) {
+  const rule = challenge.config.missedDay;
+  if (rule.mode === 'log') return { ends: false, text: 'It will be recorded as missed – your challenge carries on.' };
+  if (rule.mode === 'grace') {
+    const left = rule.graceDays - evaluation.graceUsed;
+    if (left > 0) return { ends: false, text: `It will use 1 of your grace days (${left} left).` };
+    return { ends: true, text: "You're out of grace days, so this ends the attempt and you restart at Day 1." };
+  }
+  return { ends: true, text: 'Under your rules this ends the attempt and you restart at Day 1.' };
+}
+
+async function markMissed(r: DayResult, challenge: Challenge, evaluation: ChallengeEvaluation) {
+  const c = missedConsequence(challenge, evaluation);
+  if (c.ends && !confirm(`Mark Day ${r.day} as missed?\n\n${c.text}`)) return;
+  await setCheck(r.date, DAY_MISSED, true);
+}
+
+const missingTasks = (r: DayResult) => r.tasks.filter((t) => !t.done).map((t) => t.label).join(', ');
+
+/** Days that weren't fully logged. Nothing is failed until you say you actually missed it. */
+function CatchUpCard({ challenge, evaluation }: { challenge: Challenge; evaluation: ChallengeEvaluation }) {
+  const navigate = useNavigate();
+  const days = evaluation.needsReview;
+  if (!days.length) return null;
+  return (
+    <Card className="mb-4 border-amber-700 bg-amber-950/30">
+      <h2 className="font-bold text-white">📝 Catch up on {days.length === 1 ? '1 day' : `${days.length} days`}</h2>
+      <p className="text-sm text-slate-300 mt-1 mb-3">
+        These days aren't fully logged. Forgot to log them? Fill them in or tick them off. Nothing counts as missed until you say so.
+      </p>
+      <div className="space-y-3">
+        {days.map((r) => (
+          <div key={r.date} className="rounded-xl bg-slate-900/80 border border-slate-800 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-semibold text-white">Day {r.day}</span>
+              <span className="text-xs text-slate-400">{prettyDate(r.date, 'EEE d MMM')}</span>
+            </div>
+            <div className="text-xs text-slate-400 mt-0.5 mb-2">Not logged: {missingTasks(r)}</div>
+            <div className="flex flex-wrap gap-2">
+              <Button className="text-sm py-1.5" onClick={() => setCheck(r.date, DAY_CONFIRMED, true)}>✓ I did it all</Button>
+              <Button variant="soft" className="text-sm py-1.5" onClick={() => navigate(`/day/${r.date}`)}>Log details</Button>
+              <Button variant="ghost" className="text-sm py-1.5" onClick={() => markMissed(r, challenge, evaluation)}>I missed it</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {days.length > 1 && (
+        <Button variant="soft" className="w-full mt-3" onClick={() => Promise.all(days.map((r) => setCheck(r.date, DAY_CONFIRMED, true)))}>
+          ✓ I did everything on all {days.length} days
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+/** On a past day: one-tap "I did everything", with undo. */
+function PastDayActions({ result, challenge, evaluation }: { result: DayResult; challenge: Challenge; evaluation: ChallengeEvaluation }) {
+  const active = challenge.status === 'active';
+  if (result.confirmed) {
+    return (
+      <Card className="mb-4 text-sm text-slate-300 flex items-center justify-between gap-3">
+        <span>✅ You marked this day as done without logging every task.</span>
+        {active && <Button variant="ghost" className="text-sm shrink-0" onClick={() => setCheck(result.date, DAY_CONFIRMED, false)}>Undo</Button>}
+      </Card>
+    );
+  }
+  if (result.state === 'missed' || result.state === 'grace') {
+    return (
+      <Card className="mb-4 text-sm text-slate-300 flex items-center justify-between gap-3">
+        <span>{result.state === 'grace' ? '🛟 Grace day used – marked as missed.' : '❌ Marked as missed.'}</span>
+        {active && (
+          <Button variant="ghost" className="text-sm shrink-0" onClick={() => setCheck(result.date, DAY_MISSED, false)}>Undo</Button>
+        )}
+      </Card>
+    );
+  }
+  if (result.complete || !active) return null;
+  return (
+    <Card className="mb-4">
+      <p className="text-sm text-slate-300 mb-3">
+        Forgot to log this day? Fill in the details below, or if you did everything just tick it off.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => setCheck(result.date, DAY_CONFIRMED, true)}>✓ I did everything this day</Button>
+        {result.state === 'review' && (
+          <Button variant="ghost" onClick={() => markMissed(result, challenge, evaluation)}>I missed it</Button>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 function EndedCard({ challenge, today }: { challenge: Challenge; today: string }) {
   const navigate = useNavigate();
@@ -83,6 +178,7 @@ export default function DayView() {
 
   return (
     <div>
+      {isToday && <CatchUpCard challenge={challenge} evaluation={evaluation} />}
 
       <div className="flex items-center justify-between mb-3">
         <Link to={`/day/${addDaysStr(date, -1)}`} className="rounded-full p-2 text-slate-400 hover:bg-slate-800" aria-label="Previous day">◀</Link>
@@ -120,10 +216,11 @@ export default function DayView() {
               <span className="text-slate-400">🛟 {config.missedDay.graceDays - evaluation.graceUsed} grace left</span>
             )}
           </div>
-          {result?.final && !ev.complete && <div className="text-xs text-red-400 mt-1">This day is closed.</div>}
-          {result?.state === 'open' && <div className="text-xs text-amber-400 mt-1">Finish by {settings.cutoffHour}:00 today.</div>}
+          {result?.state === 'review' && <div className="text-xs text-amber-400 mt-1">Not fully logged yet</div>}
         </div>
       </Card>
+
+      {result && date < today && <PastDayActions result={result} challenge={challenge} evaluation={evaluation} />}
 
       <div className="space-y-2 mb-4">
         {ev.tasks.map((t) => (

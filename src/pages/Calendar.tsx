@@ -12,6 +12,7 @@ const STATE_STYLE: Record<DayState, string> = {
   today: 'bg-slate-800 text-white ring-2 ring-accent',
   open: 'bg-amber-500/40 text-white',
   missed: 'bg-red-700 text-white',
+  review: 'bg-violet-700 text-white',
   grace: 'bg-sky-700 text-white',
   future: 'bg-slate-800/60 text-slate-400',
 };
@@ -19,6 +20,7 @@ const STATE_STYLE: Record<DayState, string> = {
 const LEGEND: [DayState, string][] = [
   ['complete', 'Complete'],
   ['partial', 'In progress'],
+  ['review', 'Not logged'],
   ['missed', 'Missed'],
   ['grace', 'Grace day'],
   ['future', 'Upcoming'],
