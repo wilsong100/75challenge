@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, withDefaults } from './db';
-import { emptyDay, evaluateChallenge, type ChallengeEvaluation, type DayData } from '../lib/rules';
+import { emptyDay, evaluateChallenge, reconcileStatus, type ChallengeEvaluation, type DayData } from '../lib/rules';
 import { todayStr } from '../lib/dates';
 import type { Challenge, Settings } from '../types';
 
@@ -72,15 +72,12 @@ export function useAppData(): AppData {
     [challenge, getDay, today, now.getHours(), settings.cutoffHour, settings.units],
   );
 
-  // Apply the rules: end the attempt when a missed day breaks it, or mark it complete.
+  // Keep the stored status in line with the rules: end, complete, or reopen the latest attempt.
+  // Setting a field to undefined makes Dexie delete it.
   useEffect(() => {
-    if (!challenge?.id || challenge.status !== 'active' || !evaluation) return;
-    if (evaluation.failedOnDay !== undefined) {
-      const failed = evaluation.days[evaluation.failedOnDay - 1];
-      db.challenges.update(challenge.id, { status: 'failed', failedOnDay: failed.day, endDate: failed.date });
-    } else if (evaluation.completed) {
-      db.challenges.update(challenge.id, { status: 'completed', endDate: evaluation.days[74].date });
-    }
+    if (!challenge?.id || !evaluation) return;
+    const update = reconcileStatus(challenge, evaluation);
+    if (update) db.challenges.update(challenge.id, update);
   }, [challenge, evaluation]);
 
   const loading = [challenges, workouts, water, reading, checks, photoDates].some((x) => x === undefined);

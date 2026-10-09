@@ -132,12 +132,19 @@ function EndedCard({ challenge, today }: { challenge: Challenge; today: string }
       <h2 className="text-xl font-bold text-white">Attempt {challenge.attempt} ended on Day {challenge.failedOnDay}</h2>
       <p className="text-slate-300 mt-1 mb-4">
         {hard
-          ? 'The rules are the rules: a missed task means back to Day 1. Everything you logged is kept in your history.'
-          : 'You ran out of grace days. Everything you logged is kept in your history.'}
+          ? `You marked Day ${challenge.failedOnDay} as missed, and under 75 Hard rules that means back to Day 1.`
+          : `You marked Day ${challenge.failedOnDay} as missed with no grace days left.`}{' '}
+        Everything you logged is kept in your history.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => restartChallenge(challenge, today)}>Restart at Day 1 today</Button>
         <Button variant="soft" onClick={() => navigate('/new')}>Change rules</Button>
+        {challenge.endDate && (
+          // Clearing the "missed" answer lets the rules reopen this attempt (see reconcileStatus).
+          <Button variant="ghost" onClick={() => setCheck(challenge.endDate!, DAY_MISSED, false)}>
+            I didn't miss it – undo
+          </Button>
+        )}
       </div>
     </Card>
   );
