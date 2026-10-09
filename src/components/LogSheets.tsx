@@ -246,12 +246,23 @@ export function PhotoSheet({ date, open, onClose }: Omit<SheetProps, 'units'>) {
           options={[{ value: 'front', label: 'Front' }, { value: 'side', label: 'Side' }, { value: 'back', label: 'Back' }]} />
       </Field>
       <p className="text-sm text-slate-400 mb-4">Tip: same spot, same lighting, same time of day makes comparisons much clearer.</p>
-      <label className="block">
-        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
-        <span className="block w-full text-center rounded-xl bg-accent px-4 py-3 font-semibold text-white cursor-pointer">
-          {busy ? 'Saving…' : '📷 Take or choose photo'}
-        </span>
-      </label>
+      {busy ? (
+        <p className="text-center text-slate-300 py-3">Saving…</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {/* `capture` opens the camera directly; without it the phone offers its photo library. */}
+          <label className="block">
+            <input type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <span className="block w-full text-center rounded-xl bg-accent px-4 py-3 font-semibold text-white cursor-pointer">📷 Take photo</span>
+          </label>
+          <label className="block">
+            <input type="file" accept="image/*" className="hidden"
+              onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <span className="block w-full text-center rounded-xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 cursor-pointer hover:bg-slate-700">🖼️ From library</span>
+          </label>
+        </div>
+      )}
     </Sheet>
   );
 }
