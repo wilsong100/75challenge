@@ -243,3 +243,24 @@ export function evaluateChallenge(
     needsReview,
   };
 }
+
+export type StatusUpdate = Pick<Challenge, 'status' | 'failedOnDay' | 'endDate'>;
+
+/**
+ * The stored status the rules imply for the latest attempt, or null if it's already right.
+ * Also reopens an attempt the current rules no longer consider failed – e.g. one ended by an
+ * older, stricter version of the app, or after an "I missed it" answer was undone.
+ */
+export function reconcileStatus(challenge: Pick<Challenge, 'status'>, ev: ChallengeEvaluation): StatusUpdate | null {
+  if (challenge.status === 'active') {
+    if (ev.failedOnDay !== undefined) {
+      const d = ev.days[ev.failedOnDay - 1];
+      return { status: 'failed', failedOnDay: d.day, endDate: d.date };
+    }
+    if (ev.completed) return { status: 'completed', endDate: ev.days[CHALLENGE_DAYS - 1].date };
+    return null;
+  }
+  if (challenge.status === 'failed' && ev.failedOnDay === undefined)
+    return { status: 'active', failedOnDay: undefined, endDate: undefined };
+  return null;
+}

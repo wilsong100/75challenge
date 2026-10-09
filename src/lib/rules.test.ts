@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAY_CONFIRMED, DAY_MISSED, emptyDay, evaluateChallenge, evaluateDay, isFinal, isPhotoDay, type DayData } from './rules';
+import { DAY_CONFIRMED, DAY_MISSED, emptyDay, evaluateChallenge, evaluateDay, isFinal, isPhotoDay, reconcileStatus, type DayData } from './rules';
 import { HARD_CONFIG, SOFT_DEFAULTS } from './presets';
 import { addDaysStr } from './dates';
 import type { ChallengeConfig, Workout } from '../types';
@@ -155,6 +155,26 @@ describe('evaluateChallenge', () => {
     const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [], [10]), morning);
     expect(ev.days[9].state).toBe('open');
     expect(ev.needsReview).toHaveLength(0);
+  });
+
+  it('does not fail a soft attempt for a missing photo plus two unlogged days', () => {
+    // An older version failed this exact case: the Day 1 photo counted as a task.
+    const config: ChallengeConfig = { ...SOFT_DEFAULTS, missedDay: { mode: 'grace', graceDays: 2 } };
+    const getDay = (date: string) => {
+      const day = dayOf(date);
+      if (day === 1) return { ...perfect(config), hasPhoto: false };
+      return day === 2 || day === 3 ? emptyDay() : days(config, [])(date);
+    };
+    const ev = evaluateChallenge({ startDate: start, config }, getDay, now);
+    expect(ev.failedOnDay).toBeUndefined();
+    expect(ev.needsReview.map((d) => d.day)).toEqual([2, 3]);
+    expect(reconcileStatus({ status: 'failed' }, ev)).toEqual({ status: 'active', failedOnDay: undefined, endDate: undefined });
+  });
+
+  it('keeps a genuinely failed attempt failed', () => {
+    const ev = evaluateChallenge({ startDate: start, config: HARD_CONFIG }, days(HARD_CONFIG, [5]), now);
+    expect(reconcileStatus({ status: 'failed' }, ev)).toBeNull();
+    expect(reconcileStatus({ status: 'active' }, ev)).toEqual({ status: 'failed', failedOnDay: 5, endDate: '2026-09-05' });
   });
 
   it('completes after 75 perfect days', () => {
